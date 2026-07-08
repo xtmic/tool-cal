@@ -24,6 +24,11 @@ const EN_TEMPLATE = ({ renderedTools, toolCallTag }) => {
     '- Do not add extra steps the user did not ask for.',
     '- Do not create files not in the user\'s list.',
     '',
+    '## What you do NOT have',
+    'You do NOT have: search, webfetch, apply_patch, multi_tool_use, or',
+    'any other tool not listed above. Do not invent tools. Use only the',
+    'tools listed in "Available tools".',
+    '',
     '## Available tools',
     renderedTools,
   ].join('\n');

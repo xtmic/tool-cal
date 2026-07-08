@@ -277,6 +277,66 @@ describe("flattenMessages", () => {
   });
 });
 
+describe("cleanMetaTalk (via non-streaming client)", () => {
+  it("nullifies 'Ok.' when it is the only output with no tool calls", async () => {
+    const client = mockClient(["Ok."]);
+    const wrapped = wrapToolSupport(client, { generateId: seqIds() });
+    const res = (await wrapped.chat.completions.create({
+      model: "m",
+      messages: userMsg,
+      tools,
+    })) as ChatCompletion;
+    expect(res.choices[0]!.message.content).toBeNull();
+    expect(res.choices[0]!.message.tool_calls).toBeUndefined();
+  });
+
+  it("nullifies 'Let\\'s call tool read' meta-narration", async () => {
+    const client = mockClient(["Let's call tool read."]);
+    const wrapped = wrapToolSupport(client, { generateId: seqIds() });
+    const res = (await wrapped.chat.completions.create({
+      model: "m",
+      messages: userMsg,
+      tools,
+    })) as ChatCompletion;
+    expect(res.choices[0]!.message.content).toBeNull();
+  });
+
+  it("nullifies content where >50% of lines are meta-talk", async () => {
+    const client = mockClient(["Ok.\nLet's do it.\nBut tool says no.\nActual answer here."]);
+    const wrapped = wrapToolSupport(client, { generateId: seqIds() });
+    const res = (await wrapped.chat.completions.create({
+      model: "m",
+      messages: userMsg,
+      tools,
+    })) as ChatCompletion;
+    expect(res.choices[0]!.message.content).toBeNull();
+  });
+
+  it("keeps valid prose that does not match meta-talk patterns", async () => {
+    const client = mockClient(["The weather in London is 15°C and cloudy."]);
+    const wrapped = wrapToolSupport(client, { generateId: seqIds() });
+    const res = (await wrapped.chat.completions.create({
+      model: "m",
+      messages: userMsg,
+      tools,
+    })) as ChatCompletion;
+    expect(res.choices[0]!.message.content).toBe("The weather in London is 15°C and cloudy.");
+  });
+
+  it("does not filter meta-talk when a tool call was produced", async () => {
+    const client = mockClient([
+      '```tool_call\n{"name":"get_weather","arguments":{"city":"Paris"}}\n```',
+    ]);
+    const wrapped = wrapToolSupport(client, { generateId: seqIds() });
+    const res = (await wrapped.chat.completions.create({
+      model: "m",
+      messages: userMsg,
+      tools,
+    })) as ChatCompletion;
+    expect(res.choices[0]!.message.tool_calls).toHaveLength(1);
+  });
+});
+
 describe("wrapToolSupport (streaming)", () => {
   it("streams prose then emits a tool-call delta and a finish chunk", async () => {
     const client = mockClient([

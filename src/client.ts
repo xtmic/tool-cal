@@ -23,6 +23,35 @@ import { parseToolCalls, tryParseJson, extractReasoning } from "./parser.js";
 import { ToolCallStreamParser, ReasoningStreamParser } from "./stream-parser.js";
 import { ToolCapabilityError } from "./errors.js";
 
+const META_TALK_RE =
+  /^(Let's\s+(call|do|send|try|actually|follow)|(Ok|Okay)\.?\s*$|Proceed\.?\s*$|No\s+more\.?\s*$|Reading\.+\s*$|→\w+|Stop\.\s*$|tool_call\b|Can't\s+wrap|We'll\s+follow|But\s+tool|Wait\.?\s*$|\?\s*$|т[ыЫ]\s+не\s+|Сейчас\s+сделаю)/i;
+
+/**
+ * Detects meta-narration ("Let's call tool...", "Ok.", etc.) and returns `null`
+ * when the text should be discarded from the conversation.  Applied only when
+ * no tool calls were produced, so actual tool invocations are never affected.
+ */
+function cleanMetaTalk(text: string): string | null {
+  if (!text) return text;
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return text;
+
+  // Rule 3 – entire content is one short sentence matching the meta-talk pattern.
+  if (text.length < 100 && lines.length === 1 && META_TALK_RE.test(text.trim())) return null;
+
+  // Rule 2 – same line repeated 3+ times consecutively.
+  for (let i = 0; i <= lines.length - 3; i++) {
+    if (lines[i] === lines[i + 1] && lines[i] === lines[i + 2]) return null;
+  }
+
+  // Rule 1 – more than half of the non-empty lines match the meta-talk pattern.
+  let matched = 0;
+  for (const line of lines) if (META_TALK_RE.test(line)) matched++;
+  if (matched > lines.length / 2) return null;
+
+  return text;
+}
+
 export interface WrapOptions extends PromptOptions {
   /** Generates the `id` for parsed tool calls (e.g. for deterministic tests). */
   generateId?: (index: number) => string;
@@ -259,12 +288,13 @@ function transformResponse(res: ChatCompletion, opts: TransformOptions): ChatCom
     const finalReasoning =
       reasoning ?? (typeof upstreamReasoning === "string" ? upstreamReasoning : null);
 
+    const finalContent =
+      toolCalls.length === 0
+        ? cleanMetaTalk(content ?? raw)
+        : content;
     const message: ChatCompletionMessage = {
       role: "assistant",
-      content:
-        toolCalls.length > 0
-          ? content
-          : (content ?? (reasoning != null ? null : raw)),
+      content: finalContent ?? null,
       refusal: choice.message.refusal ?? null,
     };
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
@@ -310,6 +340,11 @@ async function* transformStream(
   let template: ChatCompletionChunk | undefined;
   let started = false;
 
+  // Buffer content deltas so we can filter meta-talk at the end.
+  // Tool-call deltas are yielded immediately so the runner can process them.
+  const contentChunks: Array<{ chunk: ChatCompletionChunk | undefined; delta: ChatCompletionChunkDelta }> = [];
+  let contentAcc = "";
+
   for await (const chunk of source) {
     template = chunk;
     if (!started) {
@@ -328,9 +363,23 @@ async function* transformStream(
       if (reasoner) {
         const r = reasoner.push(text);
         if (r.reasoning.length > 0) yield makeChunk(chunk, { reasoning_content: r.reasoning });
-        for (const d of parser.push(r.content)) yield makeChunk(chunk, d);
+        for (const d of parser.push(r.content)) {
+          if (d.tool_calls) {
+            yield makeChunk(chunk, d);
+          } else {
+            contentChunks.push({ chunk, delta: d });
+            contentAcc += d.content ?? "";
+          }
+        }
       } else {
-        for (const d of parser.push(text)) yield makeChunk(chunk, d);
+        for (const d of parser.push(text)) {
+          if (d.tool_calls) {
+            yield makeChunk(chunk, d);
+          } else {
+            contentChunks.push({ chunk, delta: d });
+            contentAcc += d.content ?? "";
+          }
+        }
       }
     }
   }
@@ -342,9 +391,31 @@ async function* transformStream(
   if (reasoner) {
     const r = reasoner.flush();
     if (r.reasoning.length > 0) yield makeChunk(template, { reasoning_content: r.reasoning });
-    for (const d of parser.push(r.content)) yield makeChunk(template, d);
+    for (const d of parser.push(r.content)) {
+      if (d.tool_calls) {
+        yield makeChunk(template, d);
+      } else {
+        contentChunks.push({ chunk: template, delta: d });
+        contentAcc += d.content ?? "";
+      }
+    }
   }
-  for (const d of parser.flush()) yield makeChunk(template, d);
+  for (const d of parser.flush()) {
+    if (d.tool_calls) {
+      yield makeChunk(template, d);
+    } else {
+      contentChunks.push({ chunk: template, delta: d });
+      contentAcc += d.content ?? "";
+    }
+  }
+
+  // If no tool calls were emitted and content is pure meta-talk, discard it.
+  if (parser.toolCallCount === 0 && cleanMetaTalk(contentAcc) === null) {
+    contentChunks.length = 0;
+    contentAcc = "";
+  }
+  for (const { chunk, delta } of contentChunks) yield makeChunk(chunk, delta);
+
   yield makeChunk(
     template,
     {},
