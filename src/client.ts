@@ -8,6 +8,7 @@ import type {
   ChatCompletionCreateParamsStreaming,
   ChatCompletionMessage,
   ChatCompletionMessageParam,
+  ChatCompletionAssistantMessageParam,
   ChatCompletionContentPart,
   ChatCompletionTool,
   ToolCapableClient,
@@ -24,7 +25,10 @@ import { ToolCallStreamParser, ReasoningStreamParser } from "./stream-parser.js"
 import { ToolCapabilityError } from "./errors.js";
 
 const META_TALK_RE =
-  /^(Let's\s+(call|do|send|try|actually|follow)|(Ok|Okay)\.?\s*$|Proceed\.?\s*$|No\s+more\.?\s*$|Reading\.+\s*$|→\w+|Stop\.\s*$|tool_call\b|Can't\s+wrap|We'll\s+follow|But\s+tool|Wait\.?\s*$|\?\s*$|т[ыЫ]\s+не\s+|Сейчас\s+сделаю)/i;
+  /^(Let's\s+(call|do|send|try|actually|follow)|(Ok|Okay)\.?\s*$|Proceed\.?\s*$|No\s+more\.?\s*$|Reading\.+\s*$|→\w+|Stop\.\s*$|tool_call\b|Can't\s+wrap|We'll\s+follow|But\s+tool|Wait\.?\s*$|\?\s*$|т[ыЫ]\s+не\s+|Сейчас\s+сделаю|%[A-Z]\w+)/i;
+
+const PROMISE_RE =
+  /^(Сейчас|Сейчас я|Я сейчас|Let me|I will|I'll|Сейчас быстр\w+)\s+\w+/i;
 
 /**
  * Detects meta-narration ("Let's call tool...", "Ok.", etc.) and returns `null`
@@ -150,6 +154,38 @@ function renderToolResultBlock(
  * contract — because the underlying model understands neither. Consecutive
  * tool results are merged into one user message.
  */
+
+function dedupInterTurn(messages: ChatCompletionMessageParam[]): ChatCompletionMessageParam[] {
+  const indices: number[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!;
+    if (msg.role === "assistant" && "tool_calls" in msg && msg.tool_calls && msg.tool_calls.length > 0) {
+      indices.push(i);
+      if (indices.length === 2) break;
+    }
+  }
+  if (indices.length < 2) return messages;
+
+  const laterIdx = indices[0]!;
+  const earlierIdx = indices[1]!;
+  const earlier = messages[earlierIdx]! as ChatCompletionAssistantMessageParam;
+  const later = messages[laterIdx]! as ChatCompletionAssistantMessageParam;
+
+  const earlierKeys = new Set(
+    earlier.tool_calls!.map((tc) => tc.function.name + "\0" + tc.function.arguments),
+  );
+
+  const deduped = later.tool_calls!.filter(
+    (tc) => !earlierKeys.has(tc.function.name + "\0" + tc.function.arguments),
+  );
+
+  if (deduped.length === later.tool_calls!.length) return messages;
+
+  const copy = messages.slice();
+  copy[laterIdx] = { ...later, tool_calls: deduped.length > 0 ? deduped : undefined } as ChatCompletionMessageParam;
+  return copy;
+}
+
 export function flattenMessages(
   messages: ChatCompletionMessageParam[],
   opts: { toolCallTag: string; toolResultTag: string },
@@ -293,7 +329,11 @@ function transformResponse(res: ChatCompletion, opts: TransformOptions): ChatCom
     // spans — never fall back to `raw` (which would reintroduce the blocks).
     const finalContent = toolCalls.length > 0
       ? (content ? cleanMetaTalk(content) : null)
-      : cleanMetaTalk(content ?? raw);
+      : (() => {
+          const text = content ?? raw;
+          if (text && text.length < 200 && PROMISE_RE.test(text.trim())) return null;
+          return cleanMetaTalk(text);
+        })();
     const message: ChatCompletionMessage = {
       role: "assistant",
       content: finalContent ?? null,
@@ -416,6 +456,11 @@ async function* transformStream(
     contentChunks.length = 0;
     contentAcc = "";
   }
+  // Promise without action: "Сейчас сделаю X" / "Let me do X" with no tool calls.
+  if (parser.toolCallCount === 0 && contentAcc.length < 200 && PROMISE_RE.test(contentAcc.trim())) {
+    contentChunks.length = 0;
+    contentAcc = "";
+  }
   for (const { chunk, delta } of contentChunks) yield makeChunk(chunk, delta);
 
   yield makeChunk(
@@ -471,7 +516,7 @@ export function wrapToolSupport(
     const { tools, tool_choice, parallel_tool_calls, messages, stream, ...rest } = body;
 
     // Always flatten native tool roles — the model can't read them otherwise.
-    let outMessages = flattenMessages(messages, { toolCallTag, toolResultTag });
+    let outMessages = flattenMessages(dedupInterTurn(messages), { toolCallTag, toolResultTag });
 
     const useTools = !!tools && tools.length > 0 && tool_choice !== "none";
     if (useTools) {
