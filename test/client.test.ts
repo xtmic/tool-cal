@@ -323,7 +323,7 @@ describe("cleanMetaTalk (via non-streaming client)", () => {
     expect(res.choices[0]!.message.content).toBe("The weather in London is 15°C and cloudy.");
   });
 
-  it("does not filter meta-talk when a tool call was produced", async () => {
+  it("preserves tool calls even when surrounding prose is meta-talk", async () => {
     const client = mockClient([
       '```tool_call\n{"name":"get_weather","arguments":{"city":"Paris"}}\n```',
     ]);
@@ -334,6 +334,21 @@ describe("cleanMetaTalk (via non-streaming client)", () => {
       tools,
     })) as ChatCompletion;
     expect(res.choices[0]!.message.tool_calls).toHaveLength(1);
+  });
+
+  it("nullifies meta-talk prose even when tool calls are present", async () => {
+    const client = mockClient([
+      "Let's call the tool.\n" +
+        '```tool_call\n{"name":"get_weather","arguments":{"city":"Paris"}}\n```',
+    ]);
+    const wrapped = wrapToolSupport(client, { generateId: seqIds() });
+    const res = (await wrapped.chat.completions.create({
+      model: "m",
+      messages: userMsg,
+      tools,
+    })) as ChatCompletion;
+    expect(res.choices[0]!.message.tool_calls).toHaveLength(1);
+    expect(res.choices[0]!.message.content).toBeNull();
   });
 });
 

@@ -288,10 +288,12 @@ function transformResponse(res: ChatCompletion, opts: TransformOptions): ChatCom
     const finalReasoning =
       reasoning ?? (typeof upstreamReasoning === "string" ? upstreamReasoning : null);
 
-    const finalContent =
-      toolCalls.length === 0
-        ? cleanMetaTalk(content ?? raw)
-        : content;
+    // Always clean meta-talk from content. When tool calls were found the
+    // parsed `content` is the prose that remains after removing tool-call
+    // spans — never fall back to `raw` (which would reintroduce the blocks).
+    const finalContent = toolCalls.length > 0
+      ? (content ? cleanMetaTalk(content) : null)
+      : cleanMetaTalk(content ?? raw);
     const message: ChatCompletionMessage = {
       role: "assistant",
       content: finalContent ?? null,
@@ -410,7 +412,7 @@ async function* transformStream(
   }
 
   // If no tool calls were emitted and content is pure meta-talk, discard it.
-  if (parser.toolCallCount === 0 && cleanMetaTalk(contentAcc) === null) {
+  if (cleanMetaTalk(contentAcc) === null) {
     contentChunks.length = 0;
     contentAcc = "";
   }

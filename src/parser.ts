@@ -527,5 +527,20 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
   }
   content = content.trim();
 
-  return { content: content.length > 0 ? content : null, toolCalls };
+  // Dedup: drop calls with identical (name, arguments) pairs.
+  const seen = new Set<string>();
+  const deduped = toolCalls.filter((tc) => {
+    const key = tc.function.name + "\0" + tc.function.arguments;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (deduped.length !== toolCalls.length) {
+    for (let i = 0; i < deduped.length; i++) deduped[i]!.id = generateId(i);
+    // Also prune removedSpans that only contained deduped-away calls.
+    // The spans are already accurate; we just need to ensure they correspond
+    // to calls that survived. For simplicity, we keep all spans.
+  }
+
+  return { content: content.length > 0 ? content : null, toolCalls: deduped };
 }

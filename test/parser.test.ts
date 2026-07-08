@@ -251,6 +251,41 @@ describe("parseToolCalls", () => {
     });
   });
 
+  describe("dedup identical tool calls", () => {
+    it("deduplicates two identical calls in one block", () => {
+      const text = '```tool_call\n[{"name":"a","arguments":{"x":1}},{"name":"a","arguments":{"x":1}}]\n```';
+      const { toolCalls } = parseToolCalls(text, opts);
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0]!.id).toBe("call_0");
+      expect(toolCalls[0]!.function.name).toBe("a");
+    });
+
+    it("keeps calls with different names", () => {
+      const text =
+        '```tool_call\n{"name":"a","arguments":{}}\n```\n' +
+        '```tool_call\n{"name":"b","arguments":{}}\n```';
+      const { toolCalls } = parseToolCalls(text, opts);
+      expect(toolCalls).toHaveLength(2);
+    });
+
+    it("keeps calls with same name but different arguments", () => {
+      const text =
+        '```tool_call\n{"name":"a","arguments":{"x":1}}\n```\n' +
+        '```tool_call\n{"name":"a","arguments":{"x":2}}\n```';
+      const { toolCalls } = parseToolCalls(text, opts);
+      expect(toolCalls).toHaveLength(2);
+    });
+
+    it("deduplicates three identical, keeps one", () => {
+      const text =
+        '```tool_call\n{"name":"a","arguments":{}}\n```\n' +
+        '```tool_call\n{"name":"a","arguments":{}}\n```\n' +
+        '```tool_call\n{"name":"a","arguments":{}}\n```';
+      const { toolCalls } = parseToolCalls(text, opts);
+      expect(toolCalls).toHaveLength(1);
+    });
+  });
+
   describe("balanceBrackets length guard", () => {
     it("skips bracket repair on strings larger than 64 KB", () => {
       const key = '"k":"v",'.repeat(9000);
