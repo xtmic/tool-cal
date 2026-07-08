@@ -5,22 +5,27 @@ const apiKey = process.env.UPSTREAM_API_KEY || '';
 const port = Number(process.env.PORT) || 8787;
 const host = process.env.HOST || '127.0.0.1';
 
-const RU_TEMPLATE = ({ renderedTools, toolCallTag }) => {
+const EN_TEMPLATE = ({ renderedTools, toolCallTag }) => {
   return [
-    'ИНСТРУМЕНТЫ:',
+    '# Tool use',
+    'You have access to tools. When a tool helps — call it. Do not guess.',
+    '',
+    '## How to call',
+    'Emit a fenced block tagged `tool_call` with JSON:',
+    '',
+    '```tool_call',
+    '{"name": "<name>", "arguments": { /* ... */ }}',
+    '```',
+    '',
+    '## Rules',
+    '- Valid JSON only. "arguments" is a JSON object.',
+    '- After a tool-call block: STOP. No extra text.',
+    '- NEVER write "Ok", "Let\'s", "Sure", "Done", "Let me". Just call the tool or answer.',
+    '- Do not add extra steps the user did not ask for.',
+    '- Do not create files not in the user\'s list.',
+    '',
+    '## Available tools',
     renderedTools,
-    '',
-    'Вызов — КАЖДЫЙ тег на ОТДЕЛЬНОЙ строке:',
-    '<имя_инструмента>',
-    'параметры',
-    '</имя_инструмента>',
-    '',
-    'Пример:',
-    '<bash>',
-    'lsblk',
-    '</bash>',
-    '',
-    'После </имя> ОСТАНОВИСЬ.',
   ].join('\n');
 };
 
@@ -28,8 +33,8 @@ const server = createProxyServer({
   upstreamBaseURL: upstream,
   upstreamApiKey: apiKey,
   includeExamples: false,
-  template: RU_TEMPLATE,
-  xmlToolCalls: true,
+  template: EN_TEMPLATE,
+  xmlToolCalls: false,
 });
 
 server.listen(port, host, () => {

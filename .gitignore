@@ -1,4 +1,15 @@
+node_modules
+dist
+coverage
 *.log
-*.log.*
-node_modules/
+.DS_Store
 .env
+.env.*
+
+# scratch / debug logs
+scratch*
+*.log.jsonl
+
+# stray audit/debug scripts at repo root
+test_*.mjs
+test_*.js
