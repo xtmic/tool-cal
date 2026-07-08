@@ -405,10 +405,11 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
     const info = block.infoString.toLowerCase();
     if (info === tag || info.startsWith(tag + " ")) {
       const parsed = tryParseJson(block.content);
-      const calls = filterKnown(collectFromValue(parsed, toolCalls.length, generateId));
-      if (calls.length > 0) {
-        toolCalls.push(...calls);
+      const rawCalls = collectFromValue(parsed, toolCalls.length, generateId);
+      if (rawCalls.length > 0) {
         removedSpans.push([block.start, block.end]);
+        const calls = filterKnown(rawCalls);
+        if (calls.length > 0) toolCalls.push(...calls);
       }
     }
   }
@@ -419,10 +420,11 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
       const info = block.infoString.toLowerCase();
       if (info !== "" && info !== "json") continue;
       const parsed = tryParseJson(block.content);
-      const calls = filterKnown(collectFromValue(parsed, toolCalls.length, generateId));
-      if (calls.length > 0) {
-        toolCalls.push(...calls);
+      const rawCalls = collectFromValue(parsed, toolCalls.length, generateId);
+      if (rawCalls.length > 0) {
         removedSpans.push([block.start, block.end]);
+        const calls = filterKnown(rawCalls);
+        if (calls.length > 0) toolCalls.push(...calls);
       }
     }
   }
@@ -505,13 +507,12 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
       }
 
       const parsed = tryParseJson(candidate);
-      const calls = filterKnown(collectFromValue(parsed, toolCalls.length, generateId));
-      if (calls.length > 0) {
-        toolCalls.push(...calls);
-        // Span: right after preceding \n up to (but not including) the trailing \n.
-        // This matches fenced-block removal and preserves a blank line in prose.
+      const rawCalls = collectFromValue(parsed, toolCalls.length, generateId);
+      if (rawCalls.length > 0) {
         const spanEnd = end < offsets.length ? offsets[end]! - 1 : text.length;
         removedSpans.push([lineStart, spanEnd]);
+        const calls = filterKnown(rawCalls);
+        if (calls.length > 0) toolCalls.push(...calls);
       }
       i = end - 1;
     }

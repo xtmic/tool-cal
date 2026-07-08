@@ -227,14 +227,14 @@ describe("parseToolCalls", () => {
       const text = '```tool_call\n{"name":"unknown_tool","arguments":{}}\n```';
       const { toolCalls, content } = parseToolCalls(text, { ...opts, tools });
       expect(toolCalls).toEqual([]);
-      expect(content).toContain("unknown_tool");
+      expect(content).toBeNull();
     });
 
     it("filters unknown from bare JSON lines", () => {
       const text = '{"name":"unknown_tool","arguments":{}}';
       const { toolCalls, content } = parseToolCalls(text, { ...opts, tools });
       expect(toolCalls).toEqual([]);
-      expect(content).toContain("unknown_tool");
+      expect(content).toBeNull();
     });
 
     it("keeps only known calls from an array block", () => {

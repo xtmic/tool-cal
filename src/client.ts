@@ -25,7 +25,7 @@ import { ToolCallStreamParser, ReasoningStreamParser } from "./stream-parser.js"
 import { ToolCapabilityError } from "./errors.js";
 
 const META_TALK_RE =
-  /^(Let's\s+(call|do|send|try|actually|follow)|(Ok|Okay)\.?\s*$|Proceed\.?\s*$|No\s+more\.?\s*$|Reading\.+\s*$|→\w+|Stop\.\s*$|tool_call\b|Can't\s+wrap|We'll\s+follow|But\s+tool|Wait\.?\s*$|\?\s*$|т[ыЫ]\s+не\s+|Сейчас\s+сделаю|%[A-Z]\w+)/i;
+  /^(Let's\s+(call|do|send|try|actually|follow)|(Ok|Okay)\.?\s*$|Proceed\.?\s*$|No\s+more\.?\s*$|Reading\.+\s*$|→\w+|Stop\.\s*$|tool_call\b|Can't\s+wrap|We'll\s+follow|But\s+tool|Wait\.?\s*$|\?\s*$|т[ыЫ]\s+не\s+|Сейчас\s+\w+|Выполню|Достану|Проверю|Запрошу|Попробую|Сделаю|Посмотрю|Похоже,|%[A-Z]\w+)/i;
 
 const PROMISE_RE =
   /^(Сейчас|Сейчас я|Я сейчас|Let me|I will|I'll|Сейчас быстр\w+)\s+\w+/i;
@@ -51,7 +51,7 @@ function cleanMetaTalk(text: string): string | null {
   // Rule 1 – more than half of the non-empty lines match the meta-talk pattern.
   let matched = 0;
   for (const line of lines) if (META_TALK_RE.test(line)) matched++;
-  if (matched > lines.length / 2) return null;
+  if (matched > lines.length * 0.35) return null;
 
   return text;
 }
