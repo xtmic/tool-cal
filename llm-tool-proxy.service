@@ -1,0 +1,17 @@
+[Unit]
+Description=LLM Tool Capability Proxy (tool calling emulation)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/llm-tool-proxy/env
+Environment="NODE_OPTIONS=--require %h/.config/llm-tool-proxy/preload.cjs"
+ExecStart=node --require %h/.config/llm-tool-proxy/preload.cjs %h/.local/share/llm-tool-proxy/custom-proxy.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
