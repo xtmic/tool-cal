@@ -134,6 +134,7 @@ export class ToolCallStreamParser {
   private readonly xmlOpenRe: RegExp | null;
   private readonly xmlNames: string[];
   private readonly toolByName: Map<string, ChatCompletionTool>;
+  private readonly validNames: Set<string> | null;
 
   private buf = "";
   private state: State = "text";
@@ -163,6 +164,10 @@ export class ToolCallStreamParser {
       ]),
     );
     this.xmlNames = [...this.toolByName.keys()].filter((n) => n.length > 0);
+    this.validNames =
+      options.tools && options.tools.length > 0
+        ? new Set(options.tools.map((t) => t.function.name))
+        : null;
     this.xmlOpenRe =
       this.xmlNames.length > 0
         ? new RegExp(`^[ \\t]*<(${this.xmlNames.map(escapeRegExp).join("|")})>[ \\t]*\\r?\\n`)
@@ -344,7 +349,9 @@ export class ToolCallStreamParser {
     const items = Array.isArray(parsed) ? parsed : [parsed];
     for (const item of items) {
       const na = extractNameArgs(item);
-      if (na) this.pushToolCall(na.name, na.arguments, out);
+      if (!na) continue;
+      if (this.validNames && !this.validNames.has(na.name)) continue;
+      this.pushToolCall(na.name, na.arguments, out);
     }
   }
 

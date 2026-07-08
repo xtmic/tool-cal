@@ -200,7 +200,11 @@ export function extractFencedBlocks(text: string): FencedBlock[] {
 /** Max input length eligible for regex-based repair (bounds ReDoS risk). */
 const MAX_REPAIR_LENGTH = 256 * 1024;
 
+/** Max input length eligible for bracket balancing (bounds worst-case CPU). */
+const MAX_BALANCE_LENGTH = 64 * 1024;
+
 function balanceBrackets(json: string): string {
+  if (json.length > MAX_BALANCE_LENGTH) return json;
   const stack: string[] = [];
   let inString = false;
   let escape = false;
@@ -379,17 +383,29 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
   const tag = (options.toolCallTag ?? DEFAULT_TOOL_CALL_TAG).toLowerCase();
   const generateId = options.generateId ?? randomToolCallId;
   const lenient = options.lenientFences ?? true;
+  const validNames = options.tools?.length
+    ? new Set(options.tools.map((t) => t.function.name))
+    : null;
 
   const blocks = extractFencedBlocks(text);
   const toolCalls: ChatCompletionMessageToolCall[] = [];
   const removedSpans: Array<[number, number]> = [];
+
+  /** If a tools list was supplied, drops calls whose name isn't in it and
+   *  re-indexes the survivors so their ids stay sequential. */
+  function filterKnown(calls: ChatCompletionMessageToolCall[]): ChatCompletionMessageToolCall[] {
+    if (!validNames) return calls;
+    const kept = calls.filter((c) => validNames.has(c.function.name));
+    for (let j = 0; j < kept.length; j++) kept[j]!.id = generateId(toolCalls.length + j);
+    return kept;
+  }
 
   // Pass 1: correctly-tagged blocks.
   for (const block of blocks) {
     const info = block.infoString.toLowerCase();
     if (info === tag || info.startsWith(tag + " ")) {
       const parsed = tryParseJson(block.content);
-      const calls = collectFromValue(parsed, toolCalls.length, generateId);
+      const calls = filterKnown(collectFromValue(parsed, toolCalls.length, generateId));
       if (calls.length > 0) {
         toolCalls.push(...calls);
         removedSpans.push([block.start, block.end]);
@@ -403,7 +419,7 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
       const info = block.infoString.toLowerCase();
       if (info !== "" && info !== "json") continue;
       const parsed = tryParseJson(block.content);
-      const calls = collectFromValue(parsed, toolCalls.length, generateId);
+      const calls = filterKnown(collectFromValue(parsed, toolCalls.length, generateId));
       if (calls.length > 0) {
         toolCalls.push(...calls);
         removedSpans.push([block.start, block.end]);
@@ -489,7 +505,7 @@ export function parseToolCalls(text: string, options: ParseOptions = {}): ParseR
       }
 
       const parsed = tryParseJson(candidate);
-      const calls = collectFromValue(parsed, toolCalls.length, generateId);
+      const calls = filterKnown(collectFromValue(parsed, toolCalls.length, generateId));
       if (calls.length > 0) {
         toolCalls.push(...calls);
         // Span: right after preceding \n up to (but not including) the trailing \n.

@@ -160,6 +160,18 @@ describe("ToolCallStreamParser", () => {
     expect(content).toContain("x");
     expect(p.toolCallCount).toBe(0);
   });
+
+  it("filters out unknown tool calls when tools list is provided", () => {
+    const unknownBlock = '```tool_call\n{"name":"unknown_tool","arguments":{}}\n```';
+    const { toolCalls } = run([unknownBlock], { tools: [questionTool, editTool] });
+    expect(toolCalls).toEqual([]);
+  });
+
+  it("does not filter when no tools list is provided", () => {
+    const unknownBlock = '```tool_call\n{"name":"anything","arguments":{}}\n```';
+    const { toolCalls } = run([unknownBlock], { tools: undefined });
+    expect(toolCalls).toHaveLength(1);
+  });
 });
 
 describe("ToolCallStreamParser — native XML tags (opt-in)", () => {

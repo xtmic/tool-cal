@@ -43,15 +43,13 @@ describe("createToolRunner.run", () => {
     expect(roles).toEqual(["user", "assistant", "tool", "assistant"]);
   });
 
-  it("feeds back an error for an unknown tool and keeps going", async () => {
+  it("silently drops unknown tool calls, leaving them in prose", async () => {
     const client = mockClient([call("nope", {}), "I cannot do that."]);
     const runner = createToolRunner(client, { tools: [weather] });
     const res = await runner.run({ model: "m", messages: ask });
 
-    expect(res.toolExecutions[0]!.isError).toBe(true);
-    expect(res.toolExecutions[0]!.error).toMatch(/unknown tool/i);
-    expect(res.toolExecutions[0]!.content).toMatch(/get_weather/); // lists available
-    expect(res.content).toBe("I cannot do that.");
+    expect(res.toolExecutions).toEqual([]);
+    expect(res.content).toMatch(/nope/);
   });
 
   it("feeds back a validation error for bad arguments", async () => {

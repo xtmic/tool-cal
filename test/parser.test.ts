@@ -212,6 +212,56 @@ describe("parseToolCalls", () => {
     const { toolCalls } = parseToolCalls(text, { ...opts, lenientFences: false });
     expect(toolCalls).toEqual([]);
   });
+
+  describe("tool name validation (tools list provided)", () => {
+    const tools = [bashTool, editTool];
+
+    it("keeps known tool calls", () => {
+      const text = '```tool_call\n{"name":"bash","arguments":{"command":"ls"}}\n```';
+      const { toolCalls } = parseToolCalls(text, { ...opts, tools });
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0]!.function.name).toBe("bash");
+    });
+
+    it("filters out unknown tool calls from fenced blocks", () => {
+      const text = '```tool_call\n{"name":"unknown_tool","arguments":{}}\n```';
+      const { toolCalls, content } = parseToolCalls(text, { ...opts, tools });
+      expect(toolCalls).toEqual([]);
+      expect(content).toContain("unknown_tool");
+    });
+
+    it("filters unknown from bare JSON lines", () => {
+      const text = '{"name":"unknown_tool","arguments":{}}';
+      const { toolCalls, content } = parseToolCalls(text, { ...opts, tools });
+      expect(toolCalls).toEqual([]);
+      expect(content).toContain("unknown_tool");
+    });
+
+    it("keeps only known calls from an array block", () => {
+      const text = '```tool_call\n[{"name":"bash","arguments":{}},{"name":"nope","arguments":{}}]\n```';
+      const { toolCalls } = parseToolCalls(text, { ...opts, tools });
+      expect(toolCalls).toHaveLength(1);
+      expect(toolCalls[0]!.function.name).toBe("bash");
+    });
+
+    it("does not filter when no tools list is provided", () => {
+      const text = '```tool_call\n{"name":"anything","arguments":{}}\n```';
+      const { toolCalls } = parseToolCalls(text, { ...opts, tools: undefined });
+      expect(toolCalls).toHaveLength(1);
+    });
+  });
+
+  describe("balanceBrackets length guard", () => {
+    it("skips bracket repair on strings larger than 64 KB", () => {
+      const key = '"k":"v",'.repeat(9000);
+      const body = `{"name":"a","arguments":{${key}`; // ~72 KB unterminated JSON
+      // It's unterminated and > 64 KB so balanceBrackets returns it unchanged;
+      // tryParseJson returns undefined.
+      expect(body.length).toBeGreaterThan(64 * 1024);
+      expect(body.length).toBeLessThanOrEqual(256 * 1024); // still inside regex-repair window
+      expect(tryParseJson(body)).toBeUndefined();
+    });
+  });
 });
 
 describe("extractFencedBlocks", () => {
