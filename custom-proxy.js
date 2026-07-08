@@ -1,4 +1,4 @@
-import { createProxyServer } from '/home/mikhail/.local/share/llm-tool-proxy/dist/proxy.js';
+import { createProxyServer } from './dist/proxy.js';
 
 const upstream = process.env.UPSTREAM_BASE_URL || 'https://api.titangpt.xyz/v1';
 const apiKey = process.env.UPSTREAM_API_KEY || '';

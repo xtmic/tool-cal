@@ -2,7 +2,7 @@
 # Install llm-tool-capability from GitHub
 INSTALL_DIR="$HOME/.local/share/llm-tool-proxy"
 mkdir -p "$INSTALL_DIR"
-git clone https://github.com/ll1r1k-1337/llm-tool-capability.git "$INSTALL_DIR" 2>/dev/null || true
+git clone https://github.com/xtmic/tool-cal.git "$INSTALL_DIR" 2>/dev/null || true
 cd "$INSTALL_DIR"
 npm install && npm run build
 
